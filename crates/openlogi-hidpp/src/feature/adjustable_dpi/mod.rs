@@ -101,14 +101,15 @@ fn parse_dpi_list_payload(bytes: &[u8]) -> Result<Vec<u16>, Hidpp20Error> {
             if u32::from(last) < start {
                 return Err(Hidpp20Error::UnsupportedResponse);
             }
+            // The range is the grid `start, start + step, …`, bounded by `last`.
+            // A `last` that is not an exact multiple of `step` from `start` is
+            // not on the grid and is not a settable DPI, so the range stops at
+            // the highest on-grid value at or below it.
             let mut next = start + u32::from(step);
-            while next < u32::from(last) {
+            while next <= u32::from(last) {
                 values.push(u16::try_from(next).map_err(|_| Hidpp20Error::UnsupportedResponse)?);
                 next += u32::from(step);
             }
-            // The high endpoint is always supported, even when it is not an
-            // exact multiple of `step` from the low endpoint.
-            values.push(last);
             offset += 4;
         } else {
             values.push(value);
@@ -194,15 +195,12 @@ mod tests {
     }
 
     #[test]
-    fn range_keeps_off_grid_high_endpoint() {
-        // min 400, step 400, max 1500 — 1500 is not on the 400 grid but is a
-        // supported value and must be kept.
+    fn range_stops_at_last_on_grid_value() {
+        // min 400, step 400, max 1500 — 1500 is not on the 400 grid, so the
+        // range yields only the on-grid values up to it.
         let payload = [0x01, 0x90, 0xe1, 0x90, 0x05, 0xdc, 0x00, 0x00];
 
-        assert_eq!(
-            parse_dpi_list_payload(&payload).unwrap(),
-            [400, 800, 1200, 1500]
-        );
+        assert_eq!(parse_dpi_list_payload(&payload).unwrap(), [400, 800, 1200]);
     }
 
     #[test]
